@@ -20,12 +20,19 @@ vs_model_fn = os.path.join(vs_output, "vs.pth")
 mfcc_dir = os.path.join(flickr8k_dir, "mfcc_cmvn_dd_vad")
 visionsig_fn = os.path.join(flickr8k_dir, "flickr8k_vis_v3.pkl") # soft labels for images
 flickr8k_captions_fn = os.path.join(flickr8k_dir, "word_ids/captions_content_dict.pkl")
+flickr8k_keywords = os.path.join(flickr8k_dir, "word_ids/keywords.txt")
 
 sp_output = os.path.join(flickr8k_dir, "output")
 sp_log_fn = os.path.join(sp_output, "log")
 sp_model_fn = os.path.join(sp_output, "sp.pth")
+sp_map_dir = os.path.join(flickr8k_dir, "glm_torch")
 
-sp_train_ids_fn, sp_dev_ids_fn, sp_test_ids_fn = os.path.join(flickr8k_dir, "word_ids/train.id"), os.path.join(flickr8k_dir, "word_ids/dev.id"), os.path.join(flickr8k_dir, "word_ids/test.id")
+human_judgement_dir = "/share/data/speech/ankitap/sss/semantic_flickraudio-master/data"
+keywords_test = os.path.join(human_judgement_dir,"keywords.txt")
+labels_csv = os.path.join(human_judgement_dir,"semantic_flickraudio_labels.csv")
+counts_csv = os.path.join(human_judgement_dir,"semantic_flickraudio_counts.csv")
+
+sp_train_ids_fn, sp_dev_ids_fn, sp_test_ids_fn, sp_testSem_ids_fn = os.path.join(flickr8k_dir, "word_ids/train.id"), os.path.join(flickr8k_dir, "word_ids/dev.id"), os.path.join(flickr8k_dir, "word_ids/test.id"), os.path.join(flickr8k_dir, "word_ids/testSem.id")
 
 ## flickr 8k dataset
 # flickr8k/word_ids/captions_content_dict.pkl: id - keywords
