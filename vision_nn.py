@@ -14,10 +14,10 @@ from utils import load_map, load_fc, load_label_dict, get_fscore
 parser = argparse.ArgumentParser(description="vision network", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--train", action="store_true", help="train the model")
 parser.add_argument("--test", action="store_true", help="test the model")
-parser.add_argument("--test_prob", type=str, help="dir to save prob")
-parser.add_argument("--test_map_dir", type=str, help="dir to load feature map")
+parser.add_argument("--test_prob", type=str, default=ddir.visionsig_fn, help="dir to save prob")
+parser.add_argument("--test_map_dir", type=str, default=ddir.sp_map_dir,help="dir to load feature map")
 parser.add_argument("--test_attn_dir", type=str, help="dir to save attn map")
-parser.add_argument("--model", type=str, help="model path")
+parser.add_argument("--model", type=str, default=ddir.vs_model_fn, help="model path")
 parser.add_argument("--n_bow", type=str, default=1000, help="number of words")
 parser.add_argument("--threshold", type=float, default=0.5, help="threshold for precision-recall")
 parser.add_argument("--dropout", type=float, default=0.25, help="dropout rate")
@@ -28,6 +28,7 @@ parser.add_argument("--epoch", type=int, default=10, help="epochs")
 parser.add_argument("--feature_size", type=int, default=4096, help="feature dimension in map")
 parser.add_argument("--device", type=str, default="cuda", help="device")
 parser.add_argument("--print_interval", type=int, default=200, help="interval (on iter) for printing info")
+parser.add_argument("--attn", type=bool, default=False, help="model with/without attention")
 # parser.add_argument("--save_interval", type=int, default=10, help="interval (on epoch) for saving model")
 args = parser.parse_args()
 
@@ -37,8 +38,10 @@ print("print info per %d iter" % (args.print_interval))
 if args.model is not None:
     print("Load model: %s" % (args.model))
     mlp = torch.load(args.model)
-else:
+elif(args.attn):
     mlp = model.GLMDNN(args.n_bow, args.dropout, args.feature_size)
+else:
+    mlp = model.VISDNN(args.n_bow, 2048, args.dropout) # hidden_size: 2048 (2019), 3072 (2017)
 
 
 mlp.to(args.device)
@@ -155,10 +158,12 @@ def apply_test():
 
 
 def main():
+    start = time.time()
     if args.train:
         apply_train()
     if args.test:
         apply_test()
+    print("Time elapsed: %f seconds" % (time.time()-start))
 
 
 if __name__ == "__main__":
