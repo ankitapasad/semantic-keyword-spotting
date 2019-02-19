@@ -4,6 +4,8 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
+# from scipy.spatial.distance import cosine
+# import torch.nn.modules.distance as dist
 
 LOG_MIN = 1.0e-7
 
@@ -60,7 +62,7 @@ class VGG(nn.Module):
 
 class VISDNN(nn.Module):
     def __init__(self, d_out, hidden_size, dropout): # d_out: 1000
-        super(DNN, self).__init__()
+        super(VISDNN, self).__init__()
         self.classifier = nn.Sequential(
             nn.Linear(4096, hidden_size),
             nn.ReLU(True),
@@ -79,7 +81,7 @@ class VISDNN(nn.Module):
 
     def forward(self, x):
         x = self.classifier(x)
-        prob = self.sigmoid(x)
+        prob = F.sigmoid(x)
         return prob
 
 
@@ -119,7 +121,7 @@ class GLMDNN(nn.Module):
             w.data.uniform_(-math.sqrt(6.0/(hin+hout)), math.sqrt(6.0/(hin+hout)))
 
 
-class SpeechCNNMT(nn.Module): # parallel
+class SpeechCNNMT(nn.Module): 
     def __init__(self, d_out1, d_out2, dropout, modelType):
         # "filter_shapes": [
         #     [39, 9, 1, 64],
@@ -138,7 +140,7 @@ class SpeechCNNMT(nn.Module): # parallel
         Conv2d -> inchannels, outchannels, kernel_size
         '''
         super(SpeechCNNMT, self).__init__()
-        self.type = modelType
+        self.modelType = modelType
         self.features = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=(39, 9)), # 16 x 64 x 1 x 792
             nn.ReLU(True),
@@ -195,23 +197,22 @@ class SpeechCNNMT(nn.Module): # parallel
         )       
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
-
-        if(self.type=='paracnn'): x = self.features1(x)
+    def forward(self, x, modelType):
+        if(modelType=='paracnn'): x = self.features1(x)
         else:
             x = self.features(x)
             x = x.view(-1, 1024)
 
-        if(self.type=='series'): 
+        if(modelType=='series'): 
             y = self.classifierBoW1(x)
             yBoW = self.classifierBoW2(y)
             yKW = self.classifierKW1(y)
 
-        elif(self.type=='parallel'):
+        elif(modelType=='parallel'):
             yBoW = self.classifierBoW(x)
             yKW = self.classifierKW(x)
 
-        elif(self.type=='paracnn'):
+        elif(modelType=='paracnn'):
             xBoW, xKW = self.classifierBoW3(x), self.classifierKW3(x)
             xBoW, xKW = xBoW.view(-1, 4096), xKW.view(-1, 1024)
             yBoW, yKW = self.classifierBoW2(xBoW), self.classifierKW2(xKW)
@@ -258,6 +259,57 @@ class SpeechCNN(nn.Module):
         prob = self.sigmoid(y)
         return prob
 
+class SpeechCNNMV(nn.Module):
+    def __init__(self, d_out, dropout):
+        # "filter_shapes": [
+        #     [39, 9, 1, 64],
+        #     [1, 10, 64, 256],
+        #     [1, 11, 256, 1024]
+        # ],
+        # "pool_shapes": [
+        #     [1, 3],
+        #     [1, 3],
+        #     [1, 75]
+        # ],
+        super(SpeechCNNMV, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=(39, 9)),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=(1, 3)),
+            nn.Conv2d(64, 256, kernel_size=(1, 10)),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=(1, 3)),
+            nn.Conv2d(256, 1024, kernel_size=(1, 11)),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=(1, 75)))
+        self.classifier = nn.Sequential(
+            nn.Linear(1024, 4096),
+            nn.Dropout(dropout),
+            nn.ReLU(True),
+            nn.Linear(4096, d_out)
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(-1, 1024)
+        y = self.classifier(x)
+        prob = self.sigmoid(y)
+        return x, prob # output the intermediate representation as well
+
+class visionFFMV(nn.Module):
+    def __init__(self, d_out, dropout):
+        super(visionFFMV, self).__init__()
+        self.features = nn.Sequential(
+            nn.Linear(2048, 4096),
+            nn.Dropout(dropout),
+            nn.ReLU(True),
+            nn.Linear(4096, d_out)
+        )
+
+    def forward(self,x):
+        x = self.features(x)
+        return x
 
 class SpeechAttnCNN(nn.Module):
     def __init__(self, d_out, dropout):
@@ -302,3 +354,54 @@ def loss(pred, grt, lambda_=1.0):
     pred = torch.clamp(pred, min=LOG_MIN, max=1-LOG_MIN)
     l = -torch.mean(lambda_*grt*torch.log(pred)+(1-grt)*torch.log(1-pred))
     return l
+
+# def contrastiveLoss(pos_v1, pos_v2, neg_v1, neg_v2, margin=1.0):
+#     # margin: what difference between pos and neg is satisfactory
+#     # pos_*: B x 1024
+#     # neg_*: B x N x 1024
+#     n_neg = neg_v1.shape[1]
+#     assert neg_v2.shape[1] == n_neg
+#     pos_v1_unsq = pos_v1.unsqueeze(1).repeat(1,n_neg,1) # B x N x 1024
+#     pos_v2_unsq = pos_v2.unsqueeze(1).repeat(1,n_neg,1) # B x N x 1024
+
+#     cos1 = nn.CosineSimilarity(dim=1, eps=1e-6)
+#     cos2 = nn.CosineSimilarity(dim=2, eps=1e-6)
+
+#     simP = 1 - cos1(pos_v1, pos_v2) # B
+#     simP_unsq = simP.unsqueeze(1).repeat(1,n_neg) # B x N
+#     simN1 = 1 - cos2(pos_v1_unsq, neg_v2) # B x N
+#     simN2 = 1 - cos2(neg_v1, pos_v2_unsq) # B x N
+
+#     loss1 = F.relu(margin+simP_unsq-simN1),dim=1) # B x N
+#     loss2 = F.relu(margin+simP_unsq-simN2), dim=1) # B x N
+
+#     return torch.mean(loss1+loss2)
+    
+class TripletLoss(nn.Module):
+    '''
+    Takes embeddings for a positive pair and a bunch of negative pairs
+    '''
+    def __init__(self, n_neg = 10, margin=1.0):
+        super(TripletLoss, self).__init__()
+        self.margin = margin
+        self.n_neg = n_neg
+
+    def forward(self, pos_v1, pos_v2, neg_v1, neg_v2):
+        # margin: what difference between pos and neg is satisfactory
+        # pos_*: B x 1024
+        # neg_*: B x N x 1024
+        pos_v1_unsq = pos_v1.unsqueeze(1).repeat(1,self.n_neg,1) # B x N x 1024
+        pos_v2_unsq = pos_v2.unsqueeze(1).repeat(1,self.n_neg,1) # B x N x 1024
+
+        cos1 = nn.CosineSimilarity(dim=1, eps=1e-6)
+        cos2 = nn.CosineSimilarity(dim=2, eps=1e-6)
+
+        simP = 1 - cos1(pos_v1, pos_v2) # B
+        simP_unsq = simP.unsqueeze(1).repeat(1,self.n_neg) # B x N
+        simN1 = 1 - cos2(pos_v1_unsq, neg_v2) # B x N
+        simN2 = 1 - cos2(neg_v1, pos_v2_unsq) # B x N
+
+        loss1 = F.relu(self.margin+simP_unsq-simN1) # B x N
+        loss2 = F.relu(self.margin+simP_unsq-simN2) # B x N
+
+        return torch.mean(loss1+loss2)
